@@ -1,7 +1,6 @@
 """
 
 """
-import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F  # NOQA
@@ -12,6 +11,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from src.preprocess import VideoDataset
+from src.postprocess import low_pass_filter
 
 
 class SpeedChallengeModel:
@@ -23,19 +23,19 @@ class SpeedChallengeModel:
         if torch.cuda.is_available():
             self.model.cuda()
         self.input_shape = input_shape
-        self.num_epochs = None
+        self.epochs = None
         self.training_generator = None
         self.validation_generator = None
         self.optimizer = None
         self.loss_function = None
         self.history = None
 
-    def train(self, num_epochs, training_generator, validation_generator, optimizer, loss_function):
+    def train(self, epochs, training_generator, validation_generator, optimizer, loss_function):
         """
 
         """
         # set attributes
-        self.num_epochs = num_epochs
+        self.epochs = epochs
         self.training_generator = training_generator
         self.validation_generator = validation_generator
         self.optimizer = optimizer
@@ -46,20 +46,20 @@ class SpeedChallengeModel:
         device = torch.device("cuda:0" if use_cuda else "cpu")
 
         # loop over epochs
-        self.history = {"loss": [], "val_loss": []}
-        for epoch in range(self.num_epochs):
+        self.history = {"MSE_loss": [], "val_MSE_loss": []}
+        for epoch in range(self.epochs):
             # create progress bar
             pbar = tqdm(total=len(self.training_generator) + len(self.validation_generator),
                         ncols=100, dynamic_ncols=True,
-                        desc=str(epoch + 1).zfill(5) + "/" + str(self.num_epochs).zfill(5) + ": ")
+                        desc=str(epoch + 1).zfill(5) + "/" + str(self.epochs).zfill(5) + ": ")
             # train epoch
             mean_loss_epoch_train, mean_loss_epoch_val = self.train_epoch(device, pbar)
 
             # save history information
             if mean_loss_epoch_train is not None:
-                self.history["loss"].append(mean_loss_epoch_train)
+                self.history["MSE_loss"].append(mean_loss_epoch_train)
             if mean_loss_epoch_val is not None:
-                self.history["val_loss"].append(mean_loss_epoch_val)
+                self.history["val_MSE_loss"].append(mean_loss_epoch_val)
 
             # close progress bar
             pbar.close()
@@ -96,7 +96,7 @@ class SpeedChallengeModel:
                 running_loss_batch_train += loss_batch_train.item()
                 mean_loss_batch_train = running_loss_batch_train / (index + 1)
                 pbar.update(1)
-                pbar.set_postfix_str("Loss: {:.4f}".format(mean_loss_batch_train))
+                pbar.set_postfix_str("MSE Loss: {:.4f}".format(mean_loss_batch_train))
 
         # validation
         running_loss_batch_val = 0
@@ -116,69 +116,84 @@ class SpeedChallengeModel:
                 running_loss_batch_val += loss_batch_val.item()
                 mean_loss_batch_val = running_loss_batch_val / (index + 1)
                 pbar.update(1)
-                pbar.set_postfix_str("Loss: {:.4f}; Validation Loss: {:.4f}".
+                pbar.set_postfix_str("MSE Loss: {:.4f}; Validation MSE Loss: {:.4f}".
                                      format(mean_loss_batch_train, mean_loss_batch_val))
 
         # return value
         return mean_loss_batch_train, mean_loss_batch_val
 
-    def predict(self, path_save_img, path_label_speed, batch_size, num_samples=None, normalize_ouput=False):
+    def predict(self, path_video, path_labels, num_samples=None, normalize_ouput=False, time_constant_filter=1):
         """
 
         """
         # preprocess function inputs
+        video_capture = cv.VideoCapture(path_video)
+        labels = np.load(path_labels)
         if num_samples is None:
-            num_samples = len(os.listdir(path_save_img)) - self.input_shape[0] + 1
-        speed = np.load(path_label_speed)
+            num_total_frames = int(video_capture.get(cv.CAP_PROP_FRAME_COUNT))
+        else:
+            num_total_frames = num_samples
 
         # CUDA for PyTorch
         use_cuda = torch.cuda.is_available()
         device = torch.device("cuda:0" if use_cuda else "cpu")
 
         # loop through samples
+        x = []
         y = []
         y_hat = []
-        for idx_sample in tqdm(range(0, num_samples, batch_size)):
-            # loop through the batches
-            list_img = []
-            for idx_batch in range(idx_sample, idx_sample + batch_size):
-                # loop through input frames
-                list_img_tmp = []
-                for img_counter in range(idx_batch, idx_batch + self.input_shape[0]):
-                    # read in image
-                    img = cv.imread(os.path.join(path_save_img, "{:06d}".format(img_counter) + ".jpg"))
-                    # noramlize and append to list
-                    img = VideoDataset.normalize_img(img, (self.input_shape[2],
-                                                           self.input_shape[3],
-                                                           self.input_shape[1]))
-                    # append image to temporal image list
-                    list_img_tmp.append(img)
+        for idx_img in tqdm(range(num_total_frames)):
+            success, frame = video_capture.read()
+            frame = VideoDataset.normalize_img(frame, (self.input_shape[2],
+                                                       self.input_shape[3],
+                                                       self.input_shape[1]))
+            x.append(frame)
+            if len(x) >= 3:
+                x = x[-3:]
+                # convert to numpy array and move to GPU
+                input_model = np.swapaxes(np.array(x, dtype=np.float32), 1, 3)
+                input_model = input_model[np.newaxis, :, :, :]
+                input_model = torch.from_numpy(input_model)
+                input_model = input_model.to(device)
 
-                # append to batch image list
-                list_img.append(list_img_tmp)
-                y.append(speed[img_counter])  # NOQA
+                # set model to evaluate model and do forward computation
+                self.model.eval()
+                prediction = self.model(input_model)
+                prediction = prediction.cpu().detach().numpy().reshape((-1, 1))
+                if normalize_ouput:
+                    prediction = VideoDataset.denormalize_speed(prediction,
+                                                                self.training_generator.dataset.speed_max,
+                                                                self.training_generator.dataset.speed_min)
 
-            # convert to numpy array and move to GPU
-            x = np.swapaxes(np.array(list_img, dtype=np.float32), 2, -1)
-            x = torch.from_numpy(x)
-            x = x.to(device)
-
-            # set model to evaluate model and do forward computation
-            self.model.eval()
-            prediction = self.model(x)
-            prediction = prediction.cpu().detach().numpy().reshape((-1, 1))
-            if normalize_ouput:
-                prediction = VideoDataset.denormalize_speed(prediction,
-                                                            self.training_generator.dataset.speed_max,
-                                                            self.training_generator.dataset.speed_min)
-
-            # append results
-            y_hat.append(prediction)
+                # append results
+                y.append(labels[idx_img])
+                y_hat.append(prediction)
 
         # return
         y = np.array(y).reshape((-1, 1))
         y_hat = np.array(y_hat).reshape((-1, 1))
-        return y, y_hat
+        y_hat_filter = low_pass_filter(y_hat, time_constant=time_constant_filter)
+        return y, y_hat, y_hat_filter
+
+    def save(self, path_save_model):
+        """
+
+        """
+        torch.save({
+            "epoch": self.epochs,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "history": self.history,
+        }, path_save_model)
+
+    def load(self, path_model):
+        """
+
+        """
+        checkpoint = torch.load(path_model)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.epochs = checkpoint["epoch"]
+        self.history = checkpoint["history"]
 
     def plot_history(self):
         """
@@ -186,13 +201,13 @@ class SpeedChallengeModel:
         """
         if self.history is not None:
             fig, axs = plt.subplots()
-            axs.plot(self.history["loss"], label="loss")
-            axs.plot(self.history["val_loss"], label="val_loss")
+            axs.plot(self.history["MSE_loss"], label="MSE_loss")
+            axs.plot(self.history["val_MSE_loss"], label="val_MSE_loss")
             axs.set_title("Losses")
             plt.legend()
             plt.grid()
         else:
-            print("[ERROR] no history to plot ...")
+            print("[ERROR] No history to plot ...")
 
     @staticmethod
     def plot_prediction(y, y_hat, labels):
@@ -203,13 +218,6 @@ class SpeedChallengeModel:
         axs.set_title("Speed Prediction")
         plt.legend()
         plt.grid()
-
-    @staticmethod
-    def plot_show():
-        """
-
-        """
-        plt.show()
 
 
 class EfficientNetConvLSTM(nn.Module):

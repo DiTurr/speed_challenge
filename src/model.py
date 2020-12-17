@@ -144,14 +144,14 @@ class SpeedChallengeModel:
         y_hat = []
         for idx_img in tqdm(range(num_total_frames)):
             success, frame = video_capture.read()
-            frame = VideoDataset.normalize_img(frame, (self.input_shape[2],
-                                                       self.input_shape[3],
-                                                       self.input_shape[1]))
             x.append(frame)
             if len(x) >= 3:
                 x = x[-3:]
+                x = VideoDataset.preprocess_img(x,
+                                                shape=(self.input_shape[2], self.input_shape[3], self.input_shape[1]),
+                                                flip=False)
                 # convert to numpy array and move to GPU
-                input_model = np.swapaxes(np.array(x, dtype=np.float32), 1, 3)
+                input_model = np.swapaxes(x, 1, 3)
                 input_model = input_model[np.newaxis, :, :, :]
                 input_model = torch.from_numpy(input_model)
                 input_model = input_model.to(device)
@@ -221,7 +221,7 @@ class SpeedChallengeModel:
 
 
 class EfficientNetConvLSTM(nn.Module):
-    def __init__(self, shape):
+    def __init__(self, shape, num_classes=1024):
         """
 
         """
@@ -229,9 +229,10 @@ class EfficientNetConvLSTM(nn.Module):
         self.efficientnet = EfficientNet.from_name('efficientnet-b0',
                                                    in_channels=shape[1],
                                                    include_top=True,
-                                                   batch_norm_momentum=0.1)
-        self.lstm = nn.LSTM(1000, 1000)
-        self.fc = nn.Linear(in_features=1000, out_features=1)
+                                                   batch_norm_momentum=0.1,
+                                                   num_classes=num_classes)
+        self.lstm = nn.LSTM(num_classes, num_classes)
+        self.fc = nn.Linear(in_features=num_classes, out_features=1)
 
     def forward(self, x):
         """
@@ -242,10 +243,13 @@ class EfficientNetConvLSTM(nn.Module):
         enconder_out = []
         for item in x:
             x_encoder = self.efficientnet(item)
+            x_encoder = F.dropout(x_encoder, p=0.5)
             enconder_out.append(x_encoder.unsqueeze(0))
         enconder_out = torch.cat(enconder_out, dim=0).permute(1, 0, -1)
         # LSTM
         lstm_out, _ = self.lstm(enconder_out)
+        lstm_out = lstm_out[:, -1, :]
+        lstm_out = F.dropout(lstm_out, p=0.5)
         # decoder
-        output = F.relu(self.fc(lstm_out[:, -1, :]))
+        output = F.relu(self.fc(lstm_out))
         return output

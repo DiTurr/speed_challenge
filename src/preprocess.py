@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import random
+import matplotlib.pyplot as plt
 
 STRIDE_MAX = 2
 
@@ -60,11 +61,14 @@ class VideoDataset(Dataset):
         # augmentate image
         if self.data_augmentation:
             flip = random.uniform(0, 1) > 0.5
+            gamma = random.uniform(0.75, 1.5)
         else:
             flip = False
+            gamma = 1
         x = self.preprocess_img(list_img,
                                 shape=(self.input_shape[2], self.input_shape[3], self.input_shape[1]),
-                                flip=flip)
+                                flip=flip,
+                                gamma=gamma)
         x = np.swapaxes(x, 1, 3)
 
         # pick out label
@@ -75,15 +79,14 @@ class VideoDataset(Dataset):
         return x, y
 
     @staticmethod
-    def preprocess_img(list_img, shape, flip=False):
+    def preprocess_img(list_img, shape, flip=False, gamma=1):
         """
 
         """
         output = np.zeros((len(list_img), shape[0], shape[1], shape[2]), dtype=np.float32)
         for idx, img in enumerate(list_img):
             # center crop:
-            img = img[196:-196, 232:-232]
-            # img = img[128:-128, 208:-208]
+            img = img[128:-128, 208:-208]
             # reshape image if needed
             if img.shape != shape:
                 img = cv.resize(img, (shape[0], shape[1]))
@@ -94,6 +97,8 @@ class VideoDataset(Dataset):
             # flip image if needed
             if flip:
                 img = np.fliplr(img)
+            # adjust gamma if needed
+            img = VideoDataset.adjust_gamma(img, gamma)
             # normalize image
             img = img / 256
             # append image
@@ -101,6 +106,16 @@ class VideoDataset(Dataset):
 
         # return image
         return output
+
+    @staticmethod
+    def adjust_gamma(img, gamma=1.0):
+        """
+
+        """
+        gamma_inv = 1.0 / gamma
+        table = np.array([((i / 255.0) ** gamma_inv) * 255 for i in np.arange(0, 256)]).astype("uint8")
+        # apply gamma correction using the lookup table
+        return cv.LUT(img, table)
 
     @staticmethod
     def normalize_speed(speed, speed_max, speed_min):
@@ -164,3 +179,15 @@ class VideoDataset(Dataset):
 
         # return the data split
         return img_names_train_set, img_names_test_set
+
+    @staticmethod
+    def plot_labels_histogram(path_labels, idx_img_train_set, idx_img_test_set):
+        """
+
+        """
+        labels = np.load(path_labels)
+        label_train = labels[idx_img_train_set]
+        labels_test = labels[idx_img_test_set] 
+        plt.hist(label_train, bins=30)
+        plt.hist(labels_test, bins=30)
+        plt.show()

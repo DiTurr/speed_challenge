@@ -128,7 +128,10 @@ class SpeedChallengeModel:
         """
         # preprocess function inputs
         video_capture = cv.VideoCapture(path_video)
-        labels = np.load(path_labels)
+        if path_labels is not None:
+            labels = np.load(path_labels)
+        else:
+            labels = None
         if num_samples is None:
             num_total_frames = int(video_capture.get(cv.CAP_PROP_FRAME_COUNT))
         else:
@@ -147,11 +150,13 @@ class SpeedChallengeModel:
             x.append(frame)
             if len(x) >= 3:
                 x = x[-3:]
-                x = VideoDataset.preprocess_img(x,
-                                                shape=(self.input_shape[2], self.input_shape[3], self.input_shape[1]),
-                                                flip=False)
+                input_model = VideoDataset.preprocess_img(x,
+                                                          shape=(self.input_shape[2],
+                                                                 self.input_shape[3],
+                                                                 self.input_shape[1]),
+                                                          flip=False)
                 # convert to numpy array and move to GPU
-                input_model = np.swapaxes(x, 1, 3)
+                input_model = np.swapaxes(input_model, 1, 3)
                 input_model = input_model[np.newaxis, :, :, :]
                 input_model = torch.from_numpy(input_model)
                 input_model = input_model.to(device)
@@ -166,7 +171,10 @@ class SpeedChallengeModel:
                                                                 self.training_generator.dataset.speed_min)
 
                 # append results
-                y.append(labels[idx_img])
+                if labels is not None:
+                    y.append(labels[idx_img])
+                else:
+                    y.append(0)
                 y_hat.append(prediction)
 
         # return

@@ -3,23 +3,24 @@
 """
 import torch
 from torch.utils.data import DataLoader  # NOQA
-# from torchsummary import summary
+from torchsummary import summary
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 
 from src.preprocess import VideoDataset
 from src.model import SpeedChallengeModel
+from src.postprocess import show_video
 
 cfg = {
     # preprocess
     "PREPROCESS_DATASET": False,
 
     # train model
-    "TRAIN_MODEL": True,
+    "TRAIN_MODEL": False,
     "PATH_FRAMES": "/home/ditu/Documents/03_Projects/speed_challenge/data/frames",
     "PATH_LABELS": "/home/ditu/Documents/03_Projects/speed_challenge/data/labels.npy",
-    "INPUT_SHAPE": (3, 3, 224, 224),
+    "INPUT_SHAPE": (4, 3, 224, 224),
     "NUM_SAMPLES": None,  # if None all the data available (whole video) will be taken
     "DATA_SPLITS": 16,
     "TRAIN_VAL_SPLIT": 0.8,
@@ -27,18 +28,21 @@ cfg = {
     "EPOCHS": 15,
     "NUM_WORKERS": 1,
     "LEARNING_RATE": 0.001,
+    "MOMENTUM": 0.9,
     "NORMALIZE_OUTPUT": False,
-    "PATH_SAVE_MODEL": "/home/ditu/Documents/03_Projects/speed_challenge/models/model.pth",
+    "PATH_SAVE_MODEL": "/home/ditu/Documents/03_Projects/speed_challenge/models/model_SGD_Momentum_Brigthness_4frames.pth",
 
     # make prediction
-    "PREDICT_RESULTS": True,
-    "PATH_PREDICT_VIDEO": "/home/ditu/Documents/03_Projects/speed_challenge/data/raw_data/train.mp4",
-    "NUM_SAMPLES_PREDICTION": 3000,
-    "PT1_TIME_CONSTANT": 1,
-    "PATH_SAVE_RESULTS": "/home/ditu/Documents/03_Projects/speed_challenge/results_train_video.pkl",
+    "PREDICT_RESULTS": False,
+    "PATH_PREDICT_VIDEO": "/home/ditu/Documents/03_Projects/speed_challenge/data/raw_data/test.mp4",
+    "PATH_PREDICT_LABELS": None,
+    "NUM_SAMPLES_PREDICTION": None,
+    "PT1_TIME_CONSTANT": 2,
+    "PATH_SAVE_RESULTS": "/home/ditu/Documents/03_Projects/speed_challenge/results_test_video.pkl",
 
     # plot results
     "PLOT_RESULTS": True,
+    "SHOW_VIDEO": False,
 }
 
 
@@ -100,14 +104,16 @@ def main():
         # create model
         print("[INFO] Creating model ... ")
         model = SpeedChallengeModel(input_shape=cfg["INPUT_SHAPE"])
-        # summary(model.model, cfg["INPUT_SHAPE"])
+        summary(model.model, cfg["INPUT_SHAPE"])
 
         # train model
         print("[INFO] Training model ... ")
         model.train(epochs=cfg["EPOCHS"],
                     training_generator=dataloader_train,
                     validation_generator=dataloader_test,
-                    optimizer=torch.optim.Adam(model.model.parameters(), lr=cfg["LEARNING_RATE"]),
+                    optimizer=torch.optim.SGD(model.model.parameters(),
+                                              lr=cfg["LEARNING_RATE"],
+                                              momentum=cfg["MOMENTUM"]),
                     loss_function=torch.nn.MSELoss(reduction='mean'))
 
         # save model
@@ -121,7 +127,7 @@ def main():
         model.load(path_model=cfg["PATH_SAVE_MODEL"])
         y, y_hat, y_hat_filter = model.predict(
             path_video=cfg["PATH_PREDICT_VIDEO"],
-            path_labels=cfg["PATH_LABELS"],
+            path_labels=cfg["PATH_PREDICT_LABELS"],
             num_samples=cfg["NUM_SAMPLES_PREDICTION"],
             normalize_ouput=cfg["NORMALIZE_OUTPUT"],
             time_constant_filter=cfg["PT1_TIME_CONSTANT"])
@@ -145,9 +151,28 @@ def main():
             results = pickle.load(fp)
         model.plot_prediction(results["y"], [results["y_hat"], results["y_hat_filter"]],
                               labels=["y_hat", "y_hat_filter"])
+        model.plot_prediction(results["y"], [results["y_hat_filter"]], labels=["y_hat_filter"])
+
+        # show video
+        if cfg["SHOW_VIDEO"]:
+            show_video(cfg["PATH_PREDICT_VIDEO"],
+                       results["y"],
+                       results["y_hat_filter"],
+                       input_frames=cfg["INPUT_SHAPE"][0])
 
         # show figures
         plt.show()
+
+    idx_img_train_set, idx_img_test_set = VideoDataset.split_train_test_set(
+        path_frames=cfg["PATH_FRAMES"],
+        data_splits=cfg["DATA_SPLITS"],
+        num_samples=cfg["NUM_SAMPLES"],
+        num_input_frames=cfg["INPUT_SHAPE"][0],
+        train_val_split=cfg["TRAIN_VAL_SPLIT"],
+        shuffle=False)
+    VideoDataset.plot_labels_histogram(path_labels=cfg["PATH_LABELS"],
+                                       idx_img_train_set=idx_img_train_set,
+                                       idx_img_test_set=idx_img_test_set)
 
 
 if __name__ == "__main__":

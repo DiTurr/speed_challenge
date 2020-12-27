@@ -19,7 +19,9 @@ We will evaluate your test.txt using mean squared error. <10 is good. <5 is bett
 ...
 
 # Results:
-...
+![History training](https://github.com/DiTurr/speed_challenge/blob/main/results/history_training.png)
+![Result on train dataset](https://github.com/DiTurr/speed_challenge/blob/main/results/results_train.png)
+
 
 # Conclusions:
 ...

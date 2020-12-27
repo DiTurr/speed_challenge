@@ -18,6 +18,7 @@ We will evaluate your test.txt using mean squared error. <10 is good. <5 is bett
 # Proposed model:
 To solve the challenge the following solution has been proposed:
  - 3 frames are used for the prediction.
+ - Grayscale images are used (224 x 224 x 1) (H x W X C)
  - Encoder based on EfficientNet B0.
  - Encoder is fed into LSTM layer.
  - LSTM output is fed into a fully connected layer.

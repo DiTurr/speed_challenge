@@ -14,14 +14,18 @@ def low_pass_filter(x, y_init=None, fps=30, time_constant=1):
     dt = 1 / fps
     rc = 1 / (2 * np.pi * lowpass_cutoff)
     alpha = dt / (rc + dt)
+
     # create output array
     y = np.zeros_like(x)
+
+    # loop through all numbers to filter
     if y_init is None:
         y[0] = x[0]
     else:
         y[0] = y_init
     for idx in range(1, x.shape[0]):
         y[idx] = x[idx] * alpha + (1 - alpha) * y[idx - 1]
+
     # return output
     return y
 
@@ -34,7 +38,8 @@ def show_video(path_video, y, y_hat, input_frames=1):
     num_total_frames = min(int(video_capture.get(cv.CAP_PROP_FRAME_COUNT)), y.shape[0], y_hat.shape[0])
     for idx_frame in range(num_total_frames):
         success, frame = video_capture.read()
-        # Display the resulting frame
+
+        # display the resulting frame
         if success:
             if idx_frame >= (input_frames-1):
                 # inserting text on video
@@ -47,9 +52,10 @@ def show_video(path_video, y, y_hat, input_frames=1):
                 # img = img[196:-196, 232:-232]
                 frame = cv.rectangle(frame, (232, 196), (232 + 176, 196 + 88), (255, 255, 0), 1)
             cv.imshow('Frame', frame)
-            # Press Q on keyboard to  exit
+            # press Q on keyboard to  exit
             if cv.waitKey(50) & 0xFF == ord('q'):
                 break
-        # Break the loop
+
+        # break the loop
         else:
             break

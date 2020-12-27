@@ -122,7 +122,7 @@ class SpeedChallengeModel:
         # return value
         return mean_loss_batch_train, mean_loss_batch_val
 
-    def predict(self, path_video, path_labels, num_samples=None, normalize_ouput=False, time_constant_filter=1):
+    def predict(self, path_video, path_labels, num_samples=None, time_constant_filter=1):
         """
 
         """
@@ -146,18 +146,27 @@ class SpeedChallengeModel:
         y = []
         y_hat = []
         for idx_img in tqdm(range(num_total_frames)):
+            # read in image
             success, frame = video_capture.read()
+            # to grayscale
+            if self.input_shape[1] == 1:
+                frame = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+                frame = frame[:, :, np.newaxis]
+            # center croping
+            frame = VideoDataset.center_crop(frame, self.input_shape)
+            # normalize
+            frame = frame/256
+            # append to list
             x.append(frame)
-            if len(x) >= 3:
-                x = x[-3:]
-                input_model = VideoDataset.preprocess_img(x,
-                                                          shape=(self.input_shape[2],
-                                                                 self.input_shape[3],
-                                                                 self.input_shape[1]),
-                                                          flip=False)
-                # convert to numpy array and move to GPU
-                input_model = np.swapaxes(input_model, 1, 3)
+
+            # if the list if bigger than the actual number of frames, prediction can be done
+            if len(x) >= self.input_shape[0]:
+                # select last three images of the list
+                x = x[-self.input_shape[0]:]
+                input_model = np.swapaxes(np.asarray(x, dtype=np.float32), 1, 3)
                 input_model = input_model[np.newaxis, :, :, :]
+
+                # convert to numpy array and move to GPU
                 input_model = torch.from_numpy(input_model)
                 input_model = input_model.to(device)
 
@@ -165,10 +174,6 @@ class SpeedChallengeModel:
                 self.model.eval()
                 prediction = self.model(input_model)
                 prediction = prediction.cpu().detach().numpy().reshape((-1, 1))
-                if normalize_ouput:
-                    prediction = VideoDataset.denormalize_speed(prediction,
-                                                                self.training_generator.dataset.speed_max,
-                                                                self.training_generator.dataset.speed_min)
 
                 # append results
                 if labels is not None:
@@ -183,6 +188,15 @@ class SpeedChallengeModel:
         y_hat_filter = low_pass_filter(y_hat, time_constant=time_constant_filter)
         return y, y_hat, y_hat_filter
 
+    def load(self, path_model):
+        """
+
+        """
+        checkpoint = torch.load(path_model)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.epochs = checkpoint["epoch"]
+        self.history = checkpoint["history"]
+
     def save(self, path_save_model):
         """
 
@@ -194,15 +208,6 @@ class SpeedChallengeModel:
             "history": self.history,
         }, path_save_model)
 
-    def load(self, path_model):
-        """
-
-        """
-        checkpoint = torch.load(path_model)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.epochs = checkpoint["epoch"]
-        self.history = checkpoint["history"]
-
     def plot_history(self):
         """
 
@@ -212,6 +217,8 @@ class SpeedChallengeModel:
             axs.plot(self.history["MSE_loss"], label="MSE_loss")
             axs.plot(self.history["val_MSE_loss"], label="val_MSE_loss")
             axs.set_title("Losses")
+            axs.set_xlim(0, None)
+            axs.set_ylim(0, 16)
             plt.legend()
             plt.grid()
         else:
@@ -224,6 +231,8 @@ class SpeedChallengeModel:
         for idx, y_hat_actual in enumerate(y_hat):
             axs.plot(y_hat_actual, label=labels[idx])
         axs.set_title("Speed Prediction")
+        axs.set_xlim(0, None)
+        axs.set_ylim(0, 30)
         plt.legend()
         plt.grid()
 

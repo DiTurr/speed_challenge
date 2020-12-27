@@ -25,15 +25,15 @@ To solve the challenge the following solution has been proposed:
  - For the training, just the video test.mp4 has been used.
 
 # Results:
-Training history:
+### Training history:
 
 <img src="https://github.com/DiTurr/speed_challenge/blob/main/results/history_training.png" height="300" width="400" />
 
-Results on training dataset:
+### Results on training dataset:
 
 <img src="https://github.com/DiTurr/speed_challenge/blob/main/results/results_train.png" height="300" width="400" />
 
-Results on validation dataset:
+### Results on validation dataset:
 
 ...
 

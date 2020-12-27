@@ -15,7 +15,7 @@ Your deliverable is test.txt
 We will evaluate your test.txt using mean squared error. <10 is good. <5 is better. <3 is heart.
 ```
 
-## Proposed model:
+# Proposed model:
 ...
 
 # Results:

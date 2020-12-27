@@ -16,7 +16,12 @@ We will evaluate your test.txt using mean squared error. <10 is good. <5 is bett
 ```
 
 # Proposed model:
-...
+To solve the challenge the following solution has been proposed:
+ - Encoder based on EfficientNet B0.
+ - Encoder is fed into LSTM layer.
+ - LSTM output is fed into a fully connected layer.
+ - 3 frames are used for the prediction.
+ - For the training, just the video test.mp4 has been used.
 
 # Results:
 Training history:

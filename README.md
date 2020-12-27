@@ -1,5 +1,5 @@
 # Introduction: comma.ai speed challenge
-Description by [comma.ai](https://comma.ai)  
+Description by [https://github.com/commaai/speedchallenge](https://github.com/commaai/speedchallenge)  
 
 ```
 Welcome to the comma.ai 2017 Programming Challenge!

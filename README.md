@@ -15,15 +15,23 @@ Your deliverable is test.txt
 We will evaluate your test.txt using mean squared error. <10 is good. <5 is better. <3 is heart.
 ```
 
-# Proposed model:
+# Proposed solution:
 To solve the challenge the following solution has been proposed:
- - 3 frames are used for the prediction.
- - Grayscale images are used (224 x 224 x 1) (H x W x C)
+
+== Inputs ==
+ - 3 frames are used for the prediction. At least 2 frames are need due to the fact that v = dx/dt (two frames needed to calculate difference).
+ - Grayscale center cropped images are used (224 x 224 x 1) (H x W x C) normalized between 0 and 1.
+ 
+== Arquitecture ==
  - Encoder based on EfficientNet B0.
  - Encoder is fed into LSTM layer.
  - LSTM output is fed into a fully connected layer.
  - Model output is filter with a first order loss pass filter (PT1). For implementation, see postprocessing.py
+ 
+== Training ==
  - For the training, just the video test.mp4 has been used.
+ - Data augmentation (brightness, gamma, horizintal flip).
+ - L2 regularization (try to reduce overfitting).
 
 # Results:
 ### Training history:

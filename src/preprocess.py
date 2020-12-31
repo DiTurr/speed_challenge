@@ -7,7 +7,6 @@ from torch.utils.data import Dataset  # NOQA
 import torchvision.transforms.functional as tf
 import numpy as np
 import cv2 as cv
-import pandas as pd
 from tqdm import tqdm
 import random
 import matplotlib.pyplot as plt
@@ -21,7 +20,7 @@ class VideoDataset(Dataset):
         """
         self.path_frames = path_frames
         self.idx_frames = idx_frames
-        self.labels = np.load(path_labels)
+        self.labels = np.loadtxt(path_labels).reshape(-1, 1).astype(np.float32)
         self.input_shape = input_shape
         self.num_samples = num_samples
         self.data_augmentation = data_augmentation
@@ -59,8 +58,10 @@ class VideoDataset(Dataset):
         # augmentate image
         if self.data_augmentation:
             imgs = self.img_transforms(imgs)
+
         # convert list of images to tensor
         imgs = np.swapaxes(np.asarray(imgs, dtype=np.float32), 1, 3)
+
         # return outputs
         return imgs, self.labels[idx_last_frame]
 
@@ -81,8 +82,8 @@ class VideoDataset(Dataset):
         """
         # transformation parameters
         # parameters for one channel images
-        brightness_factor = random.uniform(0.25, 1.75)
-        gamma = random.uniform(0.25, 1.75)
+        brightness_factor = random.uniform(0.25, 2)
+        gamma = random.uniform(0.25, 2)
         vflip = random.uniform(0, 1) > 0.5
         # additional parameters for three channels images
         contrast_factor = random.uniform(0.75, 1.25)
@@ -121,7 +122,7 @@ class VideoDataset(Dataset):
         return imgs_output
 
     @staticmethod
-    def save_video_to_frames(path_video, path_labels, path_save_frames, path_save_labels):
+    def save_video_to_frames(path_video, path_save_frames):
         """
 
         """
@@ -132,9 +133,6 @@ class VideoDataset(Dataset):
         for idx_img in tqdm(range(num_total_frames)):
             cv.imwrite(os.path.join(path_save_frames, "{:06d}".format(idx_img) + ".jpg"), frame)
             success, frame = video_capture.read()
-
-        # save label as numpy arrays
-        np.save(path_save_labels, pd.read_csv(path_labels, header=None).to_numpy(dtype=np.float32))
 
     @staticmethod
     def split_train_val_set(path_frames, num_data_splits, num_samples,

@@ -30,7 +30,7 @@ class SpeedChallengeModel:
         self.loss_function = None
         self.history = None
 
-    def train(self, epochs, training_generator, validation_generator, optimizer, loss_function):
+    def train(self, epochs, training_generator, validation_generator, optimizer, loss_function, path_save_model):
         """
 
         """
@@ -46,7 +46,8 @@ class SpeedChallengeModel:
         device = torch.device("cuda:0" if use_cuda else "cpu")
 
         # loop over epochs
-        self.history = {"MSE_loss": [], "val_MSE_loss": []}
+        self.history = {"loss": [], "val_loss": []}
+        loss_val_best = float("inf")
         for epoch in range(self.epochs):
             # create progress bar
             pbar = tqdm(total=len(self.training_generator) + len(self.validation_generator),
@@ -57,15 +58,27 @@ class SpeedChallengeModel:
 
             # save history information
             if mean_loss_epoch_train is not None:
-                self.history["MSE_loss"].append(mean_loss_epoch_train)
+                self.history["loss"].append(mean_loss_epoch_train)
             if mean_loss_epoch_val is not None:
-                self.history["val_MSE_loss"].append(mean_loss_epoch_val)
+                self.history["val_loss"].append(mean_loss_epoch_val)
 
             # close progress bar
             pbar.close()
 
+            # check if val loss has improved and save model if so
+            if mean_loss_epoch_val < loss_val_best:
+                print("[INFO] Validation loss improved from " + str(loss_val_best) + " to " + str(mean_loss_epoch_val))
+                loss_val_best = mean_loss_epoch_val
+                self.save(path_save_model=path_save_model.split('.')[0] +
+                                          "_epoch_" + str(epoch) + # NOQA
+                                          "." + path_save_model.split('.')[1])
+
         # ensure progress bar is closed
         pbar.close()  # NOQA
+
+        # save model
+        print("[INFO] Saving model ... ")
+        self.save(path_save_model=path_save_model)
 
     def train_epoch(self, device, pbar):
         """
@@ -75,10 +88,10 @@ class SpeedChallengeModel:
         running_loss_batch_train = 0
         mean_loss_batch_train = None
         with torch.set_grad_enabled(True):
-            for index, (x_batch, y_batch) in enumerate(self.training_generator):
+            for index, (x_batch, y_speed_batch) in enumerate(self.training_generator):
                 # transfer to GPU
                 x_batch = x_batch.to(device)
-                y_batch = y_batch.to(device)
+                y_speed_batch = y_speed_batch.to(device)
 
                 # set model to training mode
                 self.model.train()
@@ -87,8 +100,10 @@ class SpeedChallengeModel:
                 self.optimizer.zero_grad()
 
                 # forward + backward + optimize
-                y_hat_batch = self.model(x_batch)
-                loss_batch_train = self.loss_function(y_batch, y_hat_batch)
+                y_hat_speed_batch = self.model(x_batch)
+                loss_batch_train = self.loss_function(y_hat_speed_batch, y_speed_batch)
+
+                # calculate total loss
                 loss_batch_train.backward()
                 self.optimizer.step()
 
@@ -96,27 +111,28 @@ class SpeedChallengeModel:
                 running_loss_batch_train += loss_batch_train.item()
                 mean_loss_batch_train = running_loss_batch_train / (index + 1)
                 pbar.update(1)
-                pbar.set_postfix_str("MSE Loss: {:.4f}".format(mean_loss_batch_train))
+                pbar.set_postfix_str("Loss: {:.4f}".format(mean_loss_batch_train))
 
         # validation
         running_loss_batch_val = 0
         mean_loss_batch_val = None
         with torch.set_grad_enabled(False):
-            for index, (x_batch, y_batch) in enumerate(self.validation_generator):
+            for index, (x_batch, y_speed_batch) in enumerate(self.validation_generator):
                 # transfer to GPU
                 x_batch = x_batch.to(device)
-                y_batch = y_batch.to(device)
+                y_speed_batch = y_speed_batch.to(device)
 
                 # set model to evaluate model and do forward computation
                 self.model.eval()
-                y_hat_batch = self.model(x_batch)
-                loss_batch_val = self.loss_function(y_batch, y_hat_batch)
+                y_hat_speed_batch = self.model(x_batch)
+                # loss function for the speed
+                loss_batch_val = self.loss_function(y_hat_speed_batch, y_speed_batch)
 
                 # printing information/statistics
                 running_loss_batch_val += loss_batch_val.item()
                 mean_loss_batch_val = running_loss_batch_val / (index + 1)
                 pbar.update(1)
-                pbar.set_postfix_str("MSE Loss: {:.4f}; Validation MSE Loss: {:.4f}".
+                pbar.set_postfix_str("Loss: {:.4f}; Validation Loss: {:.4f}".
                                      format(mean_loss_batch_train, mean_loss_batch_val))
 
         # return value
@@ -127,15 +143,20 @@ class SpeedChallengeModel:
 
         """
         # preprocess function inputs
+        # generate video capture and calculate number of frames to be predicted
         video_capture = cv.VideoCapture(path_video)
-        if path_labels is not None:
-            labels = np.load(path_labels)
-        else:
-            labels = None
         if num_samples is None:
             num_total_frames = int(video_capture.get(cv.CAP_PROP_FRAME_COUNT))
         else:
             num_total_frames = num_samples
+
+        # save labels as numpy array (if specified)
+        if path_labels is not None:
+            speed = np.loadtxt(path_labels)[0:num_total_frames]
+        else:
+            print("[WARNING] No label data found ... ")
+            speed = np.zeros(num_total_frames)
+        speed = np.array(speed).reshape((-1, 1))
 
         # CUDA for PyTorch
         use_cuda = torch.cuda.is_available()
@@ -143,9 +164,8 @@ class SpeedChallengeModel:
 
         # loop through samples
         x = []
-        y = []
-        y_hat = []
-        for idx_img in tqdm(range(num_total_frames)):
+        speed_hat = []
+        for _ in tqdm(range(num_total_frames)):
             # read in image
             success, frame = video_capture.read()
             # to grayscale
@@ -155,7 +175,7 @@ class SpeedChallengeModel:
             # center croping
             frame = VideoDataset.center_crop(frame, self.input_shape)
             # normalize
-            frame = frame/256
+            frame = frame / 256
             # append to list
             x.append(frame)
 
@@ -172,21 +192,24 @@ class SpeedChallengeModel:
 
                 # set model to evaluate model and do forward computation
                 self.model.eval()
-                prediction = self.model(input_model)
-                prediction = prediction.cpu().detach().numpy().reshape((-1, 1))
+                speed_prediction = self.model(input_model)
+                speed_prediction = speed_prediction.cpu().detach().numpy().reshape((-1, 1))
 
                 # append results
-                if labels is not None:
-                    y.append(labels[idx_img])
-                else:
-                    y.append(0)
-                y_hat.append(prediction)
+                speed_hat.append(speed_prediction)
+
+        # make sure that the number of predictions are equal to the number of frames
+        # this may happend because more than one frame is needed to calculate the speed
+        for _ in range(num_total_frames - len(speed_hat)):
+            speed_hat.insert(0, speed_hat[0])
+
+        # transform to numpy and filter speed
+        speed_hat = np.array(speed_hat).reshape((-1, 1))
+        speed_hat_filter = low_pass_filter(speed_hat, time_constant=time_constant_filter)
 
         # return
-        y = np.array(y).reshape((-1, 1))
-        y_hat = np.array(y_hat).reshape((-1, 1))
-        y_hat_filter = low_pass_filter(y_hat, time_constant=time_constant_filter)
-        return y, y_hat, y_hat_filter
+        assert speed.shape[0] == speed_hat.shape[0] == num_total_frames
+        return speed, speed_hat, speed_hat_filter
 
     def load(self, path_model):
         """
@@ -214,8 +237,8 @@ class SpeedChallengeModel:
         """
         if self.history is not None:
             fig, axs = plt.subplots()
-            axs.plot(self.history["MSE_loss"], label="MSE_loss")
-            axs.plot(self.history["val_MSE_loss"], label="val_MSE_loss")
+            axs.plot(self.history["loss"], label="loss")
+            axs.plot(self.history["val_loss"], label="val_loss")
             axs.set_title("Losses")
             axs.set_xlim(0, None)
             axs.set_ylim(0, 16)
@@ -226,10 +249,14 @@ class SpeedChallengeModel:
 
     @staticmethod
     def plot_prediction(y, y_hat, labels):
+        """
+
+        """
         fig, axs = plt.subplots()
-        axs.plot(y, label="y")
         for idx, y_hat_actual in enumerate(y_hat):
             axs.plot(y_hat_actual, label=labels[idx])
+        if y is not None:
+            axs.plot(y, label="y")
         axs.set_title("Speed Prediction")
         axs.set_xlim(0, None)
         axs.set_ylim(0, 30)
@@ -249,7 +276,7 @@ class EfficientNetConvLSTM(nn.Module):
                                                    batch_norm_momentum=0.1,
                                                    num_classes=num_classes)
         self.lstm = nn.LSTM(num_classes, num_classes)
-        self.fc = nn.Linear(in_features=num_classes, out_features=1)
+        self.fc_speed = nn.Linear(in_features=num_classes, out_features=1)
 
     def forward(self, x):
         """
@@ -268,5 +295,5 @@ class EfficientNetConvLSTM(nn.Module):
         lstm_out = lstm_out[:, -1, :]
         lstm_out = F.dropout(lstm_out, p=0.5)
         # decoder
-        output = F.relu(self.fc(lstm_out))
-        return output
+        output_speed = F.relu(self.fc_speed(lstm_out))
+        return output_speed

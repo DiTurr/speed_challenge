@@ -35,5 +35,5 @@ cfg = {
     "PREDICT_RESULTS": False,
     "PT1_TIME_CONSTANT": 2,
     "PLOT_RESULTS": True,
-    "SHOW_VIDEO": False,
+    "SHOW_VIDEO": True,
 }

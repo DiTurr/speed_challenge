@@ -36,7 +36,7 @@ To solve the challenge the following solution has been proposed:
 
 ### Results on validation dataset:
 
-...
+<img src="https://github.com/DiTurr/speed_challenge/blob/main/results/results_test.png" height="300" width="400" />
 
 
 # Conclusions:

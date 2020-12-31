@@ -18,6 +18,10 @@ We will evaluate your test.txt using mean squared error. <10 is good. <5 is bett
 # Proposed solution:
 To solve the challenge the following solution has been proposed:
 
+== Preprocessing ==
+ - The train.mp4 video is save into 20400 frames. For implementation, see preprocessing.py (save_video_to_frames) 
+ - The train.mp4 video is split into "NUM_DATA_SPLITS" (32) division, which are split again into train and validation dataset "TRAIN_VAL_SPLIT" (0.8). For implementaion, see preprocessing.py (split_train_val_set)
+
 == Inputs ==
  - 3 frames are used for the prediction. At least 2 frames are need due to the fact that v = dx/dt (two frames needed to calculate difference).
  - Grayscale center cropped images are used (224 x 224 x 1) (H x W x C) normalized between 0 and 1.

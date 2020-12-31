@@ -125,7 +125,7 @@ def plot_results():
 
     # show video
     if cfg["SHOW_VIDEO"]:
-        show_video(cfg["PATH_VIDEO_PREDICT"], y, y_hat)
+        show_video(cfg["PATH_VIDEO_VAL"], y, y_hat)
 
     # show figures
     plt.show()

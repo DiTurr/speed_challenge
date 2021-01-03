@@ -51,5 +51,6 @@ To solve the challenge the following solution has been proposed:
 <img src="https://github.com/DiTurr/speed_challenge/blob/main/results/results_test.png" height="300" width="400" />
 
 
-# Conclusions:
-...
+# Conclusions / ToDos:
+ - Problems specially at 0 speed.
+
